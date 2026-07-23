@@ -1,13 +1,120 @@
 #define _XOPEN_SOURCE
 #include <ctype.h>
-#include <dirent.h>
+#ifdef _MSC_VER
+    #include <io.h>
+    #include <windows.h>
+    // optionally <direct.h> for directory functions
+#else
+    #include <unistd.h>
+    #include <sys/time.h>
+    #include <dirent.h>
+#endif
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #include <sys/stat.h>
+
+#ifdef _WIN32
+	#ifdef _MSC_VER
+
+		#ifndef R_OK
+			#define R_OK 4   /* Test for read permission */
+		#endif
+
+		#ifndef W_OK
+			#define W_OK 2   /* Test for write permission */
+		#endif
+
+		#ifndef X_OK
+			#define X_OK 1   /* Test for execute permission */
+		#endif
+
+	#endif
+#endif
+
+#ifdef _WIN32
+#ifdef _MSC_VER
+
+#include <windows.h>
+#include <string.h>
+#include <stdlib.h>
+
+// POSIX dirent replacement for Windows
+typedef struct dirent {
+    char d_name[MAX_PATH];
+} dirent;
+
+typedef struct DIR {
+    HANDLE hFind;
+    WIN32_FIND_DATAA data;
+    char pattern[MAX_PATH];
+    int first;
+} DIR;
+
+// opendir() replacement
+static DIR *opendir(const char *path)
+{
+    DIR *dir = malloc(sizeof(DIR));
+    if (!dir)
+        return NULL;
+
+    snprintf(dir->pattern, MAX_PATH, "%s\\*", path);
+
+    dir->hFind = FindFirstFileA(dir->pattern, &dir->data);
+    if (dir->hFind == INVALID_HANDLE_VALUE) {
+        free(dir);
+        return NULL;
+    }
+
+    dir->first = 1;
+    return dir;
+}
+
+// readdir() replacement
+static struct dirent *readdir(DIR *dir)
+{
+    static struct dirent entry;
+
+    if (!dir)
+        return NULL;
+
+    if (dir->first) {
+        dir->first = 0;
+    } else {
+        if (!FindNextFileA(dir->hFind, &dir->data))
+            return NULL;
+    }
+
+    strncpy(entry.d_name, dir->data.cFileName, MAX_PATH);
+    return &entry;
+}
+
+// closedir() replacement
+static int closedir(DIR *dir)
+{
+    if (!dir)
+        return -1;
+
+    FindClose(dir->hFind);
+    free(dir);
+    return 0;
+}
+
+#endif
+#endif
+
 
 #ifndef _WIN32
 #ifndef USE_MMAP
@@ -32,6 +139,7 @@
 #ifdef __wasi__
 #include <limits.h>
 #include <unistd.h>
+
 
 /*
 	realpath implementation borrowed from musl
@@ -2410,7 +2518,9 @@ static bool bif_iso_write_term_2(query *q)
 	if (q->portrayed) {
 		cell *c = p1;
 		pl_ctx c_ctx = p1_ctx;
-		cell p1[1+c->num_cells];
+		int n = 1 + c->num_cells;
+		cell *p1 = malloc(sizeof(cell) * n);
+		if (!p1) return false;
 		make_instr(p1+0, new_atom(q->pl, "$portray"), NULL, 1, c->num_cells);
 		dup_cells_by_ref(p1+1, c, c_ctx, c->num_cells);
 		cell *tmp = prepare_call(q, CALL_SKIP, p1, q->st.cur_ctx, 1);
@@ -2419,6 +2529,7 @@ static bool bif_iso_write_term_2(query *q)
 		query *q2 = query_create_subquery(q, tmp);
 		start(q2);
 		query_destroy(q2);
+		free(p1);   // REQUIRED
 		clear_write_options(q);
 		if (ferror(str->fp_out)) {
 			clearerr(str->fp_out);
@@ -2491,7 +2602,11 @@ static bool bif_iso_write_term_3(query *q)
 	if (q->portrayed) {
 		cell *c = p1;
 		pl_ctx c_ctx = p1_ctx;
-		cell p1[1+1+c->num_cells];
+		//cell p1[1+1+c->num_cells];
+		int n = 1 + c->num_cells;
+		cell *p1 = malloc(sizeof(cell) * n);
+		if (!p1) return false;
+
 		make_instr(p1+0, new_atom(q->pl, "$portray"), NULL, 2, 1+c->num_cells);
 		p1[1] = *pstr;
 		dup_cells_by_ref(p1+2, c, c_ctx, c->num_cells);
@@ -2501,6 +2616,7 @@ static bool bif_iso_write_term_3(query *q)
 		query *q2 = query_create_subquery(q, tmp);
 		start(q2);
 		query_destroy(q2);
+		free(p1);   // REQUIRED
 		clear_write_options(q);
 		if (ferror(str->fp_out)) {
 			clearerr(str->fp_out);

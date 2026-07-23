@@ -3,7 +3,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #include "base64.h"
 #include "module.h"
@@ -4524,7 +4533,9 @@ static bool bif_string_upper_2(query *q)
 #define FNV_OFFSET_64 0xCBF29CE484222325ULL
 #define FNV_PRIME_64  0x100000001B3ULL
 
+#ifndef _MSC_VER
 __attribute__((no_sanitize("unsigned-integer-overflow")))
+#endif
 static uint64_t fnv1a_64(const void* data, size_t size)
 {
 	const unsigned char* bytes = (const unsigned char*)data;

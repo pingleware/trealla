@@ -3,7 +3,75 @@
 #include <stddef.h>
 #include <ctype.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
+
+#ifdef _WIN32
+#ifdef _MSC_VER
+
+#ifndef STDIN_FILENO
+#define STDIN_FILENO  0
+#endif
+
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#endif
+
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
+
+#endif
+#endif
+
+#ifdef _WIN32
+#ifdef _MSC_VER
+
+// --- Readline completion flags ---
+int rl_attempted_completion_over = 0;
+int rl_completion_append_character = '\0';
+
+// --- Completion function pointer ---
+char **(*rl_attempted_completion_function)(const char *, int, int) = NULL;
+
+// --- Minimal rl_completion_matches implementation ---
+static char **rl_completion_matches(const char *text,
+                                    char *(*generator)(const char *, int))
+{
+    // Trealla only uses this for functor-name completion.
+    // We return a NULL-terminated array with a single match.
+    char **matches = malloc(sizeof(char *) * 2);
+    if (!matches)
+        return NULL;
+
+    matches[0] = generator(text, 0);   // first match
+    matches[1] = NULL;                 // terminator
+    return matches;
+}
+
+// --- Minimal history API ---
+static void using_history(void)
+{
+    // No-op on Windows
+}
+
+static int read_history(const char *filename)
+{
+    // No-op on Windows
+    return 0;
+}
+
+#endif
+#endif
+
 
 // On Nixes EDITLINE should be available if not defined uses GNU READLINE.
 // On WASM and Windows ISOCLINE?

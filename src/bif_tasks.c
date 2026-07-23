@@ -3,7 +3,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/time.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <windows.h>
+    #else
+        #include <sys/time.h>
+    #endif
+#else
+    #include <sys/time.h>
+#endif
 #include <sys/stat.h>
 
 #include "module.h"

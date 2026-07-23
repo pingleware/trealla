@@ -5,7 +5,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/time.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <windows.h>
+    #else
+        #include <sys/time.h>
+    #endif
+#else
+    #include <sys/time.h>
+#endif
 
 #if defined(__linux__)
 #include <sys/syscall.h>
@@ -22,20 +30,126 @@
 #include "query.h"
 
 #ifdef _WIN32
-#include <windows.h>
-#define unsetenv(p1)
-#define setenv(p1,p2,p3) _putenv_s(p1,p2)
-#define msleep Sleep
-#define localtime_r(p1,p2) localtime(p1)
+	#ifdef _MSC_VER
+
+		#include <windows.h>
+		#include <stdint.h>
+		#include <time.h>
+
+		// Provide clockid_t
+		typedef int clockid_t;
+
+		// Provide struct timespec
+		#ifndef _MSC_VER
+		struct timespec {
+			time_t tv_sec;
+			long   tv_nsec;
+		};
+		#endif
+
+		// Define clock types
+		#define CLOCK_REALTIME   0
+		#define CLOCK_MONOTONIC  1
+
+		// Windows monotonic clock using QueryPerformanceCounter
+		static int clock_gettime_monotonic(struct timespec *tp)
+		{
+			static LARGE_INTEGER freq;
+			LARGE_INTEGER count;
+
+			if (!freq.QuadPart)
+				QueryPerformanceFrequency(&freq);
+
+			QueryPerformanceCounter(&count);
+
+			double seconds = (double)count.QuadPart / (double)freq.QuadPart;
+
+			tp->tv_sec  = (time_t)seconds;
+			tp->tv_nsec = (long)((seconds - tp->tv_sec) * 1e9);
+
+			return 0;
+		}
+
+		// Windows realtime clock using GetSystemTimeAsFileTime
+		static int clock_gettime_realtime(struct timespec *tp)
+		{
+			FILETIME ft;
+			ULARGE_INTEGER uli;
+
+			GetSystemTimeAsFileTime(&ft);
+
+			uli.LowPart  = ft.dwLowDateTime;
+			uli.HighPart = ft.dwHighDateTime;
+
+			// Convert from 100-ns intervals since 1601 to Unix epoch seconds
+			uint64_t t = uli.QuadPart - 116444736000000000ULL;
+
+			tp->tv_sec  = (time_t)(t / 10000000ULL);
+			tp->tv_nsec = (long)((t % 10000000ULL) * 100);
+
+			return 0;
+		}
+
+		// Trealla wrapper
+		static int my_clock_gettime(clockid_t type, struct timespec *tp)
+		{
+			if (type == CLOCK_MONOTONIC)
+				return clock_gettime_monotonic(tp);
+			else if (type == CLOCK_REALTIME)
+				return clock_gettime_realtime(tp);
+
+			errno = ENOTSUP;
+			return -1;
+		}
+
+		// Provide gettimeofday()
+		static int gettimeofday(struct timeval *tv, void *tz)
+		{
+			FILETIME ft;
+			ULARGE_INTEGER uli;
+
+			GetSystemTimeAsFileTime(&ft);
+
+			uli.LowPart  = ft.dwLowDateTime;
+			uli.HighPart = ft.dwHighDateTime;
+
+			uint64_t t = uli.QuadPart - 116444736000000000ULL;
+
+			tv->tv_sec  = (long)(t / 10000000ULL);
+			tv->tv_usec = (long)((t % 10000000ULL) / 10);
+
+			return 0;
+		}
+
+	#endif
+#endif
+
+
+#ifdef _WIN32
+    #include <windows.h>
+    #ifdef _MSC_VER
+        #include <io.h>
+        // MSVC does not have unsetenv/setenv/localtime_r, so define shims:
+        #define unsetenv(p1) _putenv_s(p1, "")
+        #define setenv(p1,p2,p3) _putenv_s(p1,p2)
+        #define msleep(ms) Sleep(ms)
+        #define localtime_r(p1,p2) localtime(p1)
+    #else
+        #include <unistd.h>
+        #define unsetenv(p1)
+        #define setenv(p1,p2,p3) _putenv_s(p1,p2)
+        #define msleep Sleep
+        #define localtime_r(p1,p2) localtime(p1)
+    #endif
 #else
-#include <unistd.h>
-static void msleep(int ms)
-{
-	struct timespec tv = {0};
-	tv.tv_sec = (ms) / 1000;
-	tv.tv_nsec = ((ms) % 1000) * 1000 * 1000;
-	nanosleep(&tv, &tv);
-}
+    #include <unistd.h>
+    static void msleep(int ms)
+    {
+        struct timespec tv = {0};
+        tv.tv_sec = (ms) / 1000;
+        tv.tv_nsec = ((ms) % 1000) * 1000 * 1000;
+        nanosleep(&tv, &tv);
+    }
 #endif
 
 #define MAX_ARGS 128
@@ -119,6 +233,7 @@ static int timer_delete(timer_t timerid)
 #define NS_PER_HNS      (100ULL)    // NS = nanoseconds
 #define NS_PER_SEC      (MS_PER_SEC * US_PER_MS * NS_PER_US)
 
+#ifndef _MSC_VER
 static int clock_gettime_monotonic(struct timespec *tv)
 {
 	static LARGE_INTEGER ticksPerSec = {0};
@@ -167,6 +282,7 @@ static int my_clock_gettime(clockid_t type, struct timespec *tp)
 	errno = ENOTSUP;
 	return -1;
 }
+#endif
 #else
 #define my_clock_gettime clock_gettime
 #endif

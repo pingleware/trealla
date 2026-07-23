@@ -1,7 +1,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #include "module.h"
 #include "network.h"
@@ -691,18 +700,30 @@ bool do_format(query *q, cell *str, pl_ctx str_ctx, cell *p1, pl_ctx p1_ctx, cel
 
 			if (pr && pr->cnt) {
 				if (str) {
-					cell p1[1+1+c->num_cells];
+					int n = 1 + 1 + c->num_cells;
+					cell *p1 = malloc(n * sizeof(cell));
+					if (!p1)
+						return false;    // or appropriate error handling
+
 					make_instr(p1+0, new_atom(q->pl, "$portray"), NULL, 2, 1+c->num_cells);
 					p1[1] = *str;
 					dup_cells_by_ref(p1+2, c, c_ctx, c->num_cells);
 					tmp = prepare_call(q, CALL_SKIP, p1, q->st.cur_ctx, 1);
 					num_cells = p1->num_cells;
+
+					free(p1);
 				} else {
-					cell p1[1+c->num_cells];
+					int n = 1 + c->num_cells;
+					cell *p1 = malloc(n * sizeof(cell));
+					if (!p1)
+						return false;    // or appropriate error handling
+
 					make_instr(p1+0, new_atom(q->pl, "$portray"), NULL, 1, c->num_cells);
 					dup_cells_by_ref(p1+1, c, c_ctx, c->num_cells);
 					tmp = prepare_call(q, CALL_SKIP, p1, q->st.cur_ctx, 1);
 					num_cells = p1->num_cells;
+
+					free(p1);
 				}
 
 				make_end(tmp+num_cells);

@@ -4,6 +4,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#ifdef _MSC_VER
+#define strdup _strdup
+#endif
+
 #include "history.h"
 #include "library.h"
 #include "module.h"

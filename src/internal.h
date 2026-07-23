@@ -8,6 +8,11 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <limits.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 260
+#endif
 
 #ifndef USE_OPENSSL
 #define USE_OPENSSL 0
@@ -1070,3 +1075,34 @@ inline static bool is_empty(const cell *c) {
 #define CHECK_SENTINEL_(expr, err_sentinel, on_error, ...) do { if((expr) == err_sentinel){on_error;}} while (0)
 
 #define check_error(expr, ...) CHECK_SENTINEL(expr, 0, __VA_ARGS__; return 0)
+
+#ifdef _WIN32
+	#ifdef _MSC_VER
+		typedef intptr_t ssize_t;
+
+		static ssize_t getline(char **lineptr, size_t *n, FILE *stream)
+		{
+			char buffer[4096];
+
+			if (!fgets(buffer, sizeof(buffer), stream))
+				return -1;
+
+			size_t len = strlen(buffer);
+
+			if (*lineptr == NULL || *n < len + 1) {
+				char *new_ptr = realloc(*lineptr, len + 1);
+				if (!new_ptr)
+					return -1;
+				*lineptr = new_ptr;
+				*n = len + 1;
+			}
+
+			memcpy(*lineptr, buffer, len + 1);
+			return (ssize_t)len;
+		}
+    #else
+        // MinGW: getline exists
+        typedef intptr_t ssize_t;
+        extern ssize_t getline(char **lineptr, size_t *n, FILE *stream);
+	#endif
+#endif

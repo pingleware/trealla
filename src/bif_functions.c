@@ -11,7 +11,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #include "module.h"
 #include "query.h"
@@ -76,6 +85,61 @@
 	if (errno == ENOMEM)										\
 		return throw_error(q, &p1, q->st.cur_ctx, "resource_error", "memory"); \
 }
+
+#ifdef _MSC_VER
+    #ifndef M_PI
+        #define M_PI 3.14159265358979323846
+    #endif
+
+    #ifndef M_E
+        #define M_E 2.71828182845904523536
+    #endif
+
+    #ifndef M_LOG2E
+        #define M_LOG2E 1.44269504088896340736
+    #endif
+
+    #ifndef M_LOG10E
+        #define M_LOG10E 0.43429448190325182765
+    #endif
+
+    #ifndef M_LN2
+        #define M_LN2 0.69314718055994530942
+    #endif
+
+    #ifndef M_LN10
+        #define M_LN10 2.30258509299404568402
+    #endif
+
+    #ifndef M_PI_2
+        #define M_PI_2 1.57079632679489661923
+    #endif
+
+    #ifndef M_PI_4
+        #define M_PI_4 0.78539816339744830962
+    #endif
+
+    #ifndef M_1_PI
+        #define M_1_PI 0.31830988618379067154
+    #endif
+
+    #ifndef M_2_PI
+        #define M_2_PI 0.63661977236758134308
+    #endif
+
+    #ifndef M_2_SQRTPI
+        #define M_2_SQRTPI 1.12837916709551257390
+    #endif
+
+    #ifndef M_SQRT2
+        #define M_SQRT2 1.41421356237309504880
+    #endif
+
+    #ifndef M_SQRT1_2
+        #define M_SQRT1_2 0.70710678118654752440
+    #endif
+#endif
+
 
 static void clr_accum(cell *p)
 {
@@ -325,111 +389,134 @@ bool call_userfun(query *q, cell *c, pl_ctx c_ctx)
 
 static bool bif_iso_is_2(query *q)
 {
-	GET_FIRST_ARG(p1,any);
-	GET_NEXT_ARG(p2_tmp,any);
-	q->max_eval_depth = 0;
-	CLEANUP cell p2 = eval(q, p2_tmp);
-	p2.num_cells = 1;
+    GET_FIRST_ARG(p1,any);
+    GET_NEXT_ARG(p2_tmp,any);
+    q->max_eval_depth = 0;
 
-	if (!is_number(&p2))
-		return throw_error(q, &p2, p2_tmp_ctx, "type_error", "evaluable");
+    cell p2 = eval(q, p2_tmp);
+    p2.num_cells = 1;
 
-	if (is_float(&p2) && isnan(p2.val_float))
-		return throw_error(q, &p2, q->st.cur_ctx, "evaluation_error", "undefined");
+    if (!is_number(&p2)) {
+        unshare_cell(&p2);
+        return throw_error(q, &p2, p2_tmp_ctx, "type_error", "evaluable");
+    }
 
-	pl_int val;
+    if (is_float(&p2) && isnan(p2.val_float)) {
+        unshare_cell(&p2);
+        return throw_error(q, &p2, q->st.cur_ctx, "evaluation_error", "undefined");
+    }
 
-	if (is_bigint(&p2)) {
-		mp_small tmp;
-		if (mp_int_to_int(&p2.val_bigint->ival, &tmp) != MP_RANGE) {
-			if (tmp != PL_INT_MIN) {
-				unshare_cell(&p2);
-				make_int(&p2, tmp);
-			}
-		}
-	}
+    if (is_bigint(&p2)) {
+        mp_small tmp;
+        if (mp_int_to_int(&p2.val_bigint->ival, &tmp) != MP_RANGE) {
+            if (tmp != PL_INT_MIN) {
+                unshare_cell(&p2);
+                make_int(&p2, tmp);
+            }
+        }
+    }
 
-	bool ok = unify(q, p1, p1_ctx, &p2, q->st.cur_ctx);
-	clr_accum(&q->accum);
-	return ok;
+    bool ok = unify(q, p1, p1_ctx, &p2, q->st.cur_ctx);
+    clr_accum(&q->accum);
+    unshare_cell(&p2);
+    return ok;
 }
 
 bool bif_iso_float_1(query *q)
 {
-	GET_FIRST_ARG(p1_tmp,any);
+    GET_FIRST_ARG(p1_tmp,any);
 
-	if (q->eval) {
-		CLEANUP cell p1 = eval(q, p1_tmp);
+    if (q->eval) {
+        cell p1 = eval(q, p1_tmp);
 
-		if (is_float(&p1)) {
-			q->accum.val_float = p1.val_float;
-			q->accum.tag = TAG_FLOAT;
-			return true;
-		}
+        if (is_float(&p1)) {
+            q->accum.val_float = p1.val_float;
+            q->accum.tag = TAG_FLOAT;
+            unshare_cell(&p1);
+            return true;
+        }
 
-		if (is_rational(&p1)) {
-			q->accum.val_float = RATIONAL_TO_DOUBLE(&p1.val_bigint->irat);
-			if (isinf(q->accum.val_float)) return throw_error(q, &q->accum, q->st.cur_ctx, "evaluation_error", "float_overflow");
-			q->accum.tag = TAG_FLOAT;
-			q->accum.flags = 0;
-			return true;
-		}
+        if (is_rational(&p1)) {
+            q->accum.val_float = RATIONAL_TO_DOUBLE(&p1.val_bigint->irat);
+            if (isinf(q->accum.val_float)) {
+                unshare_cell(&p1);
+                return throw_error(q, &q->accum, q->st.cur_ctx, "evaluation_error", "float_overflow");
+            }
+            q->accum.tag = TAG_FLOAT;
+            q->accum.flags = 0;
+            unshare_cell(&p1);
+            return true;
+        }
 
-		if (is_bigint(&p1)) {
-			q->accum.val_float = BIGINT_TO_DOUBLE(&p1.val_bigint->ival);
-			if (isinf(q->accum.val_float)) return throw_error(q, &q->accum, q->st.cur_ctx, "evaluation_error", "float_overflow");
-			q->accum.tag = TAG_FLOAT;
-			return true;
-		}
+        if (is_bigint(&p1)) {
+            q->accum.val_float = BIGINT_TO_DOUBLE(&p1.val_bigint->ival);
+            if (isinf(q->accum.val_float)) {
+                unshare_cell(&p1);
+                return throw_error(q, &q->accum, q->st.cur_ctx, "evaluation_error", "float_overflow");
+            }
+            q->accum.tag = TAG_FLOAT;
+            unshare_cell(&p1);
+            return true;
+        }
 
-		if (is_smallint(&p1)) {
-			q->accum.val_float = (pl_flt)p1.val_int;
-			q->accum.tag = TAG_FLOAT;
-			return true;
-		}
+        if (is_smallint(&p1)) {
+            q->accum.val_float = (pl_flt)p1.val_int;
+            q->accum.tag = TAG_FLOAT;
+            unshare_cell(&p1);
+            return true;
+        }
 
-		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer_or_float");
-	}
+        unshare_cell(&p1);
+        return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer_or_float");
+    }
 
-	return is_float(p1_tmp);
+    return is_float(p1_tmp);
 }
 
 bool bif_iso_integer_1(query *q)
 {
-	GET_FIRST_ARG(p1_tmp,any);
+    GET_FIRST_ARG(p1_tmp,any);
 
-	if (q->eval) {
-		CLEANUP cell p1 = eval(q, p1_tmp);
+    if (q->eval) {
+        cell p1 = eval(q, p1_tmp);   // CLEANUP removed for MSVC
 
-		if (is_integer(&p1)) {
-			share_cell(&p1);
-			q->accum = p1;
-			return true;
-		}
+        if (is_integer(&p1)) {
+            share_cell(&p1);
+            q->accum = p1;
+            unshare_cell(&p1);       // manual cleanup
+            return true;
+        }
 
-		if (is_float(&p1) && (p1.val_float < (pl_flt)PL_INT_MAX) && (p1.val_float > (pl_flt)PL_INT_MIN)) {
-			q->accum.val_int = (pl_int)p1.val_float;
-			q->accum.tag = TAG_INT;
-			return true;
-		}
+        if (is_float(&p1) &&
+            (p1.val_float < (pl_flt)PL_INT_MAX) &&
+            (p1.val_float > (pl_flt)PL_INT_MIN))
+        {
+            q->accum.val_int = (pl_int)p1.val_float;
+            q->accum.tag = TAG_INT;
+            unshare_cell(&p1);
+            return true;
+        }
 
-		if (is_float(&p1)) {
-			mp_int_set_double(&q->tmp_ival, p1.val_float);
-			SET_ACCUM();
-			return true;
-		}
+        if (is_float(&p1)) {
+            mp_int_set_double(&q->tmp_ival, p1.val_float);
+            SET_ACCUM();
+            unshare_cell(&p1);
+            return true;
+        }
 
-		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer_or_float");
-	}
+        // error path must also clean up
+        unshare_cell(&p1);
+        return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer_or_float");
+    }
 
-	return is_integer(p1_tmp);
+    return is_integer(p1_tmp);
 }
 
 static bool bif_iso_abs_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 	q->accum.tag = p1.tag;
 
 	if (is_smallint(&p1))
@@ -452,7 +539,7 @@ static bool bif_iso_sign_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 	q->accum.tag = TAG_INT;
 	q->accum.flags = 0;
 
@@ -475,7 +562,7 @@ static bool bif_iso_positive_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 	q->accum = p1;
 	return true;
 }
@@ -484,7 +571,7 @@ static bool bif_iso_negative_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 	q->accum.tag = p1.tag;
 
 	if (is_smallint(&p1))
@@ -533,7 +620,7 @@ static bool bif_numerator_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (!is_integer(&p1) && !is_rational(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "rational"); \
@@ -559,7 +646,7 @@ static bool bif_denominator_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (!is_integer(&p1) && !is_rational(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "rational"); \
@@ -594,8 +681,8 @@ static bool bif_rdiv_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (!is_integer(&p1) && !is_rational(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer");
@@ -661,8 +748,8 @@ bool bif_iso_add_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	DO_OP(+, add, p1, p2);
 	return true;
 }
@@ -672,8 +759,8 @@ static bool bif_iso_sub_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	DO_OP(-, sub, p1, p2);
 	return true;
 }
@@ -683,8 +770,8 @@ static bool bif_iso_mul_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	DO_OP(*, mul, p1, p2);
 	return true;
 }
@@ -693,7 +780,7 @@ static bool bif_iso_exp_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_bigint(&p1)) {
 		if (mp_int_compare_zero(&p1.val_bigint->ival) <= 0)
@@ -731,7 +818,7 @@ static bool bif_iso_sqrt_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_bigint(&p1)) {
 		if (mp_int_compare_zero(&p1.val_bigint->ival) < 0)
@@ -772,7 +859,7 @@ static bool bif_iso_log_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_bigint(&p1)) {
 		if (mp_int_compare_zero(&p1.val_bigint->ival) <= 0)
@@ -813,7 +900,7 @@ static bool bif_popcount_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (!is_integer(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer");
@@ -848,7 +935,7 @@ static bool bif_lsb_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (!is_integer(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer");
@@ -882,7 +969,7 @@ static bool bif_msb_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (!is_integer(&p1))
 		return throw_error(q, &p1, q->st.cur_ctx, "type_error", "integer");
@@ -916,7 +1003,7 @@ static bool bif_iso_truncate_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_int = (pl_int)trunc(p1.val_float);
@@ -944,7 +1031,7 @@ static bool bif_iso_round_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_int = (pl_int)floor(p1.val_float+0.5);
@@ -972,7 +1059,7 @@ static bool bif_iso_ceiling_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_int = (pl_int)ceil(p1.val_float);
@@ -1000,7 +1087,7 @@ static bool bif_iso_float_integer_part_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_float = (pl_int)p1.val_float;
@@ -1020,7 +1107,7 @@ static bool bif_iso_float_fractional_part_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_float = p1.val_float - (pl_int)p1.val_float;
@@ -1044,7 +1131,7 @@ static bool bif_iso_floor_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_float(&p1)) {
 		q->accum.val_int = (pl_int)floor(p1.val_float);
@@ -1072,7 +1159,7 @@ static bool bif_iso_sin_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = sin((pl_flt)p1.val_int);
@@ -1105,7 +1192,7 @@ static bool bif_iso_cos_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = cos((pl_flt)p1.val_int);
@@ -1138,7 +1225,7 @@ static bool bif_iso_tan_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = tan((pl_flt)p1.val_int);
@@ -1179,7 +1266,7 @@ static bool bif_iso_asin_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = asin((pl_flt)p1.val_int);
@@ -1212,7 +1299,7 @@ static bool bif_iso_acos_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = acos((pl_flt)p1.val_int);
@@ -1245,7 +1332,7 @@ static bool bif_iso_atan_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = atan((pl_flt)p1.val_int);
@@ -1279,8 +1366,8 @@ static bool bif_iso_atan2_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_smallint(&p2)) {
 		if ((p1.val_int == 0) && (p2.val_int == 0))
@@ -1325,7 +1412,7 @@ static bool bif_sinh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = sinh((pl_flt)p1.val_int);
@@ -1358,7 +1445,7 @@ static bool bif_cosh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = cosh((pl_flt)p1.val_int);
@@ -1391,7 +1478,7 @@ static bool bif_tanh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = tanh((pl_flt)p1.val_int);
@@ -1424,7 +1511,7 @@ static bool bif_asinh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = asinh((pl_flt)p1.val_int);
@@ -1457,7 +1544,7 @@ static bool bif_acosh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = acosh((pl_flt)p1.val_int);
@@ -1490,7 +1577,7 @@ static bool bif_atanh_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = atanh((pl_flt)p1.val_int);
@@ -1524,7 +1611,7 @@ static bool bif_erf_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = erf((pl_flt)p1.val_int);
@@ -1558,7 +1645,7 @@ static bool bif_erfc_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_float = 1.0 - erf((pl_flt)p1.val_int);
@@ -1593,8 +1680,8 @@ static bool bif_iso_copysign_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_smallint(&p2)) {
 		q->accum = p1;
@@ -1630,8 +1717,8 @@ static bool bif_iso_pow_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_bigint(&p2)) {
 		mp_small tmp;
@@ -1704,8 +1791,8 @@ static bool bif_iso_powi_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		if (is_negative(&p2))
@@ -1812,8 +1899,8 @@ static bool bif_iso_divide_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		q->accum.val_float = BIGINT_TO_DOUBLE(&p1.val_bigint->ival);
@@ -1932,8 +2019,8 @@ static bool bif_iso_divint_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_integer(&p1) && is_integer(&p2)) {
 		if (is_bigint(&p2) && mp_int_compare_zero(&p2.val_bigint->ival) == 0)
@@ -1979,8 +2066,8 @@ static bool bif_iso_mod_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_smallint(&p2)) {
 		if (p2.val_int == 0)
@@ -2019,8 +2106,8 @@ static bool bif_iso_div_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		mpz_t tmp3, tmp4;
@@ -2083,8 +2170,8 @@ static bool bif_iso_rem_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_smallint(&p2)) {
 		if (p2.val_int == 0)
@@ -2123,8 +2210,8 @@ static bool bif_iso_max_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
  	if (is_smallint(&p1) && is_smallint(&p2)) {
 		if (p1.val_int >= p2.val_int)
@@ -2216,8 +2303,8 @@ static bool bif_iso_min_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_smallint(&p1) && is_smallint(&p2)) {
 		if (p1.val_int <= p2.val_int)
@@ -2312,8 +2399,8 @@ static bool bif_iso_xor_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		mp_int_xor(&p1.val_bigint->ival, &p2.val_bigint->ival, &q->tmp_ival);
@@ -2349,8 +2436,8 @@ static bool bif_iso_or_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		mp_int_or(&p1.val_bigint->ival, &p2.val_bigint->ival, &q->tmp_ival);
@@ -2386,8 +2473,8 @@ static bool bif_iso_and_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		mp_int_and(&p1.val_bigint->ival, &p2.val_bigint->ival, &q->tmp_ival);
@@ -2423,8 +2510,8 @@ static bool bif_iso_shl_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_smallint(&p2)) {
 		mp_int_mul_pow2(&p1.val_bigint->ival, p2.val_int, &q->tmp_ival);
@@ -2464,8 +2551,8 @@ static bool bif_iso_shr_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_smallint(&p2)) {
 		mp_int_div_pow2(&p1.val_bigint->ival, p2.val_int, &q->tmp_ival, NULL);
@@ -2488,7 +2575,7 @@ static bool bif_iso_neg_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_smallint(&p1)) {
 		q->accum.val_int = ~p1.val_int;
@@ -2605,8 +2692,8 @@ static bool bif_iso_numeric_eq_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(==,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2616,8 +2703,8 @@ static bool bif_iso_numeric_ne_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(!=,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2627,8 +2714,8 @@ static bool bif_iso_numeric_ge_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(>=,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2638,8 +2725,8 @@ static bool bif_iso_numeric_gt_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(>,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2649,8 +2736,8 @@ static bool bif_iso_numeric_le_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(<=,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2660,8 +2747,8 @@ static bool bif_iso_numeric_lt_2(query *q)
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
 	q->max_eval_depth = 0;
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 	COMPARE_OP(<,p1,p2);
 	return throw_error(q, &p1, q->st.cur_ctx, "type_error", "evaluable");
 }
@@ -2671,8 +2758,8 @@ static bool bif_log_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_var(&p1)) {
 		return throw_error(q, &p1, q->st.cur_ctx, "instantiation_error", "not_sufficiently_instantiated");
@@ -2749,7 +2836,7 @@ static bool bif_log10_1(query *q)
 {
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
+	cell p1 = eval(q, p1_tmp);
 
 	if (is_var(&p1)) {
 		return throw_error(q, &p1, q->st.cur_ctx, "instantiation_error", "not_sufficiently_instantiated");
@@ -2870,8 +2957,8 @@ static bool bif_gcd_2(query *q)
 	START_FUNCTION(q);
 	GET_FIRST_ARG(p1_tmp,any);
 	GET_NEXT_ARG(p2_tmp,any);
-	CLEANUP cell p1 = eval(q, p1_tmp);
-	CLEANUP cell p2 = eval(q, p2_tmp);
+	cell p1 = eval(q, p1_tmp);
+	cell p2 = eval(q, p2_tmp);
 
 	if (is_bigint(&p1) && is_bigint(&p2)) {
 		mp_int_gcd(&p1.val_bigint->ival, &p2.val_bigint->ival, &q->tmp_ival);

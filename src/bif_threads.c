@@ -2,9 +2,22 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <sys/time.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <windows.h>
+    #else
+        #include <sys/time.h>
+    #endif
+#else
+    #include <sys/time.h>
+#endif
 #include <sys/stat.h>
-#include <sched.h>
+#ifdef _WIN32
+    // MSVC: no sched.h, thread priorities not supported
+    #include <windows.h>
+#else
+    #include <sched.h>
+#endif
 
 #include "module.h"
 #include "query.h"

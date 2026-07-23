@@ -2,7 +2,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #include "module.h"
 #include "network.h"

@@ -2,6 +2,12 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#ifdef TREALLA_MSVC_FIX
+#define EMPTY_STRUCT int _dummy;
+#else
+#define EMPTY_STRUCT
+#endif
+
 #if USE_THREADS
 #include <pthread.h>
 #include <unistd.h>
@@ -12,6 +18,7 @@ typedef struct {
 } lock;
 #else
 typedef struct {
+    EMPTY_STRUCT
 } lock;
 #endif
 

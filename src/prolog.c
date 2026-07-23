@@ -3,8 +3,15 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef _WIN32
-#include <unistd.h>
+#ifdef _WIN32
+    #ifdef _MSC_VER
+        #include <io.h>
+        #include <windows.h>
+    #else
+        #include <unistd.h>   // MinGW
+    #endif
+#else
+    #include <unistd.h>
 #endif
 
 #include "library.h"

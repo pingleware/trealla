@@ -3,8 +3,20 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef TREALLA_MSVC_FIX
+#define EMPTY_STRUCT int _dummy;
+#else
+#define EMPTY_STRUCT
+#endif
+
+typedef struct pl_vm {
+    EMPTY_STRUCT
+} pl_vm;
+
 typedef struct prolog_ prolog;
-typedef struct {} pl_sub_query;
+typedef struct {
+    EMPTY_STRUCT
+} pl_sub_query;
 
 prolog *pl_create(void);
 void pl_destroy(prolog*);

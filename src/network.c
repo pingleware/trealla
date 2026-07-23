@@ -511,6 +511,7 @@ size_t tpl_read(void *ptr, size_t len, stream *str)
 	return ok;
 }
 
+#ifndef _MSC_VER
 #ifdef _WIN32
 ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
     size_t pos;
@@ -560,6 +561,7 @@ ssize_t getline(char **lineptr, size_t *n, FILE *stream) {
     (*lineptr)[pos] = '\0';
     return pos;
 }
+#endif
 #endif
 
 int tpl_getline(char **lineptr, size_t *n, stream *str)

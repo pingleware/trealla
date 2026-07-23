@@ -10,6 +10,13 @@
 #include "skiplist.h"
 #include "threads.h"
 
+#ifdef _MSC_VER
+#define UNUSED_PARAM
+#else
+#define UNUSED_PARAM __attribute__((unused))
+#endif
+
+
 typedef struct slnode_ slnode_t;
 
 struct slnode_ {
@@ -47,12 +54,13 @@ inline static slnode_t *new_node_of_level(unsigned x)
 	return malloc(sizeof(slnode_t) + ((x+1) * sizeof(slnode_t*)));
 }
 
-static int default_cmpkey(const void *p1, const void *p2, __attribute__((unused)) const void *p, void *l)
+static int default_cmpkey(const void *p1, const void *p2,UNUSED_PARAM const void *p, void *l)
 {
-	ptrdiff_t i1 = (ptrdiff_t)p1;
-	ptrdiff_t i2 = (ptrdiff_t)p2;
-	return i1 < i2 ? -1 : i1 > i2 ? 1 : 0;
+    ptrdiff_t i1 = (ptrdiff_t)p1;
+    ptrdiff_t i2 = (ptrdiff_t)p2;
+    return i1 < i2 ? -1 : i1 > i2 ? 1 : 0;
 }
+
 
 skiplist *sl_create(int (*cmpkey)(const void*, const void*, const void*, void *), void(*delkey)(void*, void*, const void*), const void *p)
 {

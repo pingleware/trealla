@@ -297,9 +297,25 @@ inline static cell *get_raw_arg(query *q, int n)
 	return c;
 }
 
+#ifdef _MSC_VER
+
 #define CHECKED(expr, ...) \
-	CHECK_SENTINEL(expr, 0, __VA_ARGS__; \
-	return throw_error(q, q->st.instr, q->st.cur_ctx, "resource_error", "memory"))
+    do { \
+        if (!(expr)) { \
+            __VA_ARGS__; \
+            return false; \
+        } \
+    } while (0)
+
+#else
+
+#define CHECKED(expr, ...) \
+    CHECK_SENTINEL(expr, 0, __VA_ARGS__; \
+        return throw_error(q, q->st.instr, q->st.cur_ctx, \
+                           "resource_error", "memory"))
+
+#endif
+
 
 // This one leaves original state if a cycle detected...
 

@@ -4935,7 +4935,9 @@ bool run(parser *p, const char *prolog_src, bool dump, query **subq, unsigned in
 		}
 
 		query *q = query_create(p->m);
+		#ifndef _MSC_VER
 		CHECKED(q, p->srcptr = NULL, SB_free(pr));
+		#endif
 
 		if (subq)
 			*subq = q;
