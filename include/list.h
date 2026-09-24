@@ -23,9 +23,9 @@ typedef struct {
 	list_refcnt cnt;
 } list;
 
-void list_push_front(list *l, void *new);
-void list_push_back(list *l, void *new);
-void list_insert_after(list *l, void *old, void *new);
+void list_push_front(list *l, void *item);
+void list_push_back(list *l, void *item);
+void list_insert_after(list *l, void *old, void *item);
 void *list_remove(list *l, void *old);
 void *list_pop_front(list *l);
 void *list_pop_back(list *l);

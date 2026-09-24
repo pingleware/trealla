@@ -1,12 +1,15 @@
+/**
+ * toplevel.c
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-#include <signal.h>
 
 #include "history.h"
 #include "module.h"
 #include "prolog.h"
 #include "query.h"
+#include "signal.h"
 
 static void show_goals(query *q, int num)
 {
@@ -65,7 +68,7 @@ int check_interrupt(query *q)
 	}
 
 	g_tpl_interrupt = 0;
-	signal(SIGINT, &g_sigfn);
+	signal(SIGINT, g_sigfn);
 
 	for (;;) {
 		printf("\nAction or (h)elp: ");

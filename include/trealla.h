@@ -1,21 +1,22 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
-#ifdef TREALLA_MSVC_FIX
-#define EMPTY_STRUCT int _dummy;
-#else
-#define EMPTY_STRUCT
-#endif
+#include "win_compat.h"
+
 
 typedef struct pl_vm {
-    EMPTY_STRUCT
+    unsigned id;
 } pl_vm;
 
 typedef struct prolog_ prolog;
 typedef struct {
-    EMPTY_STRUCT
+    unsigned id;
 } pl_sub_query;
 
 prolog *pl_create(void);
@@ -55,3 +56,7 @@ extern int g_ac, g_avc, g_argvc;
 extern char **g_av, **g_argv, *g_argv0;
 extern char *g_tpl_lib;
 extern const char *g_version;
+
+#ifdef __cplusplus
+}
+#endif
